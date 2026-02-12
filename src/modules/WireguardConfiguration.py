@@ -19,7 +19,17 @@ from .Utilities import StringToBoolean, GenerateWireguardPublicKey, RegexMatch, 
     ValidateEndpointAllowedIPs
 from .WireguardConfigurationInfo import WireguardConfigurationInfo, PeerGroupsClass
 from .DashboardWebHooks import DashboardWebHooks
-from .TrafficControl import apply_peer_limit, remove_peer_limit, remove_all_limits, is_tc_available
+try:
+    from .TrafficControl import apply_peer_limit, remove_peer_limit, remove_all_limits, is_tc_available
+except ImportError:
+    def apply_peer_limit(interface: str, allowed_ip: str, rate_down_kbit: int, rate_up_kbit: int = 0) -> bool:
+        return False
+    def remove_peer_limit(interface: str, allowed_ip: str) -> bool:
+        return True
+    def remove_all_limits(interface: str) -> bool:
+        return True
+    def is_tc_available() -> bool:
+        return False
 
 
 class WireguardConfiguration:

@@ -19,6 +19,7 @@ from .Utilities import StringToBoolean, GenerateWireguardPublicKey, RegexMatch, 
     ValidateEndpointAllowedIPs
 from .WireguardConfigurationInfo import WireguardConfigurationInfo, PeerGroupsClass
 from .DashboardWebHooks import DashboardWebHooks
+from .TrafficControl import apply_peer_limit, remove_peer_limit, remove_all_limits, is_tc_available
 
 
 class WireguardConfiguration:
@@ -257,6 +258,8 @@ class WireguardConfiguration:
             sqlalchemy.Column('keepalive', sqlalchemy.Integer),
             sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
             sqlalchemy.Column('preshared_key', sqlalchemy.String(255)),
+            sqlalchemy.Column('rate_limit_download', sqlalchemy.Integer),
+            sqlalchemy.Column('rate_limit_upload', sqlalchemy.Integer),
             extend_existing=True
         )
         self.peersRestrictedTable = sqlalchemy.Table(
@@ -280,6 +283,8 @@ class WireguardConfiguration:
             sqlalchemy.Column('keepalive', sqlalchemy.Integer),
             sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
             sqlalchemy.Column('preshared_key', sqlalchemy.String(255)),
+            sqlalchemy.Column('rate_limit_download', sqlalchemy.Integer),
+            sqlalchemy.Column('rate_limit_upload', sqlalchemy.Integer),
             extend_existing=True
         )
         self.peersTransferTable = sqlalchemy.Table(
@@ -326,6 +331,8 @@ class WireguardConfiguration:
             sqlalchemy.Column('keepalive', sqlalchemy.Integer),
             sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
             sqlalchemy.Column('preshared_key', sqlalchemy.String(255)),
+            sqlalchemy.Column('rate_limit_download', sqlalchemy.Integer),
+            sqlalchemy.Column('rate_limit_upload', sqlalchemy.Integer),
             extend_existing=True
         )
         self.infoTable = sqlalchemy.Table(
@@ -336,6 +343,7 @@ class WireguardConfiguration:
         )
 
         self.metadata.create_all(self.engine)
+        self.__ensureRateLimitColumns(dbName)
 
     def __dumpDatabase(self):
         with self.engine.connect() as conn:
@@ -345,6 +353,17 @@ class WireguardConfiguration:
                 for row in rows:
                     insert_stmt = i.insert().values(dict(row))
                     yield str(insert_stmt.compile(compile_kwargs={"literal_binds": True}))
+
+    def __ensureRateLimitColumns(self, dbName: str):
+        """Add rate_limit columns to existing tables if missing."""
+        for table in [dbName, f'{dbName}_restrict_access', f'{dbName}_deleted']:
+            for col in ['rate_limit_download', 'rate_limit_upload']:
+                try:
+                    with self.engine.begin() as conn:
+                        conn.execute(sqlalchemy.text(f'ALTER TABLE "{table}" ADD COLUMN "{col}" INTEGER'))
+                    current_app.logger.info(f"[WGDashboard] Added column {col} to {table}")
+                except Exception:
+                    pass
 
     def __importDatabase(self, sqlFilePath, restore = False) -> bool:
         if not restore:
@@ -457,7 +476,9 @@ class WireguardConfiguration:
                                     "mtu": self.DashboardConfig.GetConfig("Peers", "peer_mtu")[1] if len(self.DashboardConfig.GetConfig("Peers", "peer_mtu")[1]) > 0 else None,
                                     "keepalive": self.DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1] if len(self.DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1]) > 0 else None,
                                     "remote_endpoint": self.DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
-                                    "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else ""
+                                    "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else "",
+                                    "rate_limit_download": None,
+                                    "rate_limit_upload": None
                                 }
                                 with self.engine.begin() as conn:
                                     conn.execute(
@@ -549,7 +570,9 @@ class WireguardConfiguration:
                         "mtu": i['mtu'],
                         "keepalive": i['keepalive'],
                         "remote_endpoint": self.DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
-                        "preshared_key": i["preshared_key"]
+                        "preshared_key": i["preshared_key"],
+                        "rate_limit_download": i.get("rate_limit_download"),
+                        "rate_limit_upload": i.get("rate_limit_upload")
                     }
                     conn.execute(
                         self.peersTable.insert().values(newPeer)
@@ -569,6 +592,7 @@ class WireguardConfiguration:
             subprocess.check_output(
                 f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
             self.getPeers()
+            self.applyTrafficLimits()
             for p in peers:
                 p = self.searchPeer(p['id'])
                 if p[0]:
@@ -625,6 +649,7 @@ class WireguardConfiguration:
         if not self.__wgSave():
             return False, "Failed to save configuration through WireGuard"
         self.getPeers()
+        self.__applyTrafficLimits()
         return True, "Allow access successfully"
 
     def restrictPeers(self, listOfPublicKeys) -> tuple[bool, str]:
@@ -638,6 +663,7 @@ class WireguardConfiguration:
                 found, pf = self.searchPeer(p)
                 if found:
                     try:
+                        remove_peer_limit(self.Name, pf.allowed_ip)
                         subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
                                                 shell=True, stderr=subprocess.STDOUT)
                         conn.execute(
@@ -690,6 +716,7 @@ class WireguardConfiguration:
                     AllPeerShareLinks.updateLinkExpireDate(shareLink.ShareID, datetime.now())
                 if found:
                     try:
+                        remove_peer_limit(self.Name, pf.allowed_ip)
                         subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
                                                 shell=True, stderr=subprocess.STDOUT)
                         conn.execute(
@@ -845,9 +872,39 @@ class WireguardConfiguration:
                 )
                 count += 2
 
+    def __getEffectiveRateLimit(self, peer) -> tuple[int, int]:
+        """Get effective rate limit for peer (peer overrides group). Returns (down_kbit, up_kbit)."""
+        down = peer.rate_limit_download or 0
+        up = peer.rate_limit_upload or 0
+        if down > 0 or up > 0:
+            return down, up
+        for grp in (self.configurationInfo.PeerGroups or {}).values():
+            if peer.id in grp.Peers:
+                gdown = getattr(grp, 'RateLimitDownload', 0) or 0
+                gup = getattr(grp, 'RateLimitUpload', 0) or 0
+                if gdown > 0 or gup > 0:
+                    return gdown, gup
+        return 0, 0
+
+    def applyTrafficLimits(self):
+        """Apply tc limits for all active peers with limits."""
+        if not is_tc_available() or not self.getStatus():
+            return
+        for peer in self.Peers:
+            down, up = self.__getEffectiveRateLimit(peer)
+            if down > 0:
+                apply_peer_limit(self.Name, peer.allowed_ip, down, up)
+
+    def removeTrafficLimits(self):
+        """Remove all tc limits for this interface."""
+        if not is_tc_available():
+            return
+        remove_all_limits(self.Name)
+
     def toggleConfiguration(self) -> tuple[bool, str] | tuple[bool, None]:
         self.getStatus()
         if self.Status:
+            self.removeTrafficLimits()
             try:
                 check = subprocess.check_output(f"{self.Protocol}-quick down {self.Name}",
                                                 shell=True, stderr=subprocess.STDOUT)
@@ -860,6 +917,7 @@ class WireguardConfiguration:
                 self.addAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
+            self.applyTrafficLimits()
         self.__parseConfigurationFile()
         self.getStatus()
         return True, None
@@ -1279,6 +1337,7 @@ class WireguardConfiguration:
             for name, data in value.items():
                 peerGroups[name] = PeerGroupsClass(**data)
             self.configurationInfo.PeerGroups = peerGroups
+            self.applyTrafficLimits()
         elif key == "PeerTrafficTracking":
             self.configurationInfo.PeerTrafficTracking = value
         elif key == "PeerHistoricalEndpointTracking":

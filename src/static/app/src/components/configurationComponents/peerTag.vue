@@ -122,7 +122,9 @@ const addGroup = () => {
 		Description: "",
 		BackgroundColor: randomColor(),
 		Icon: randomIcon(),
-		Peers: []
+		Peers: [],
+		RateLimitDownload: 0,
+		RateLimitUpload: 0
 	}
 }
 

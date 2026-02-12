@@ -36,6 +36,8 @@ class Peer:
         self.keepalive = tableData["keepalive"]
         self.remote_endpoint = tableData["remote_endpoint"]
         self.preshared_key = tableData["preshared_key"]
+        self.rate_limit_download = tableData.get("rate_limit_download") or 0
+        self.rate_limit_upload = tableData.get("rate_limit_upload") or 0
         self.jobs: list[PeerJob] = []
         self.ShareLink: list[PeerShareLink] = []
         self.getJobs()
@@ -52,7 +54,8 @@ class Peer:
     def updatePeer(self, name: str, private_key: str,
                    preshared_key: str,
                    dns_addresses: str, allowed_ip: str, endpoint_allowed_ip: str, mtu: int,
-                   keepalive: int) -> tuple[bool, str] or tuple[bool, None]:
+                   keepalive: int, rate_limit_download: int = 0, rate_limit_upload: int = 0,
+                   **kwargs) -> tuple[bool, str] or tuple[bool, None]:
         if not self.configuration.getStatus():
             self.configuration.toggleConfiguration()
 
@@ -114,11 +117,17 @@ class Peer:
                         "endpoint_allowed_ip": endpoint_allowed_ip,
                         "mtu": mtu,
                         "keepalive": keepalive,
-                        "preshared_key": preshared_key
+                        "preshared_key": preshared_key,
+                        "rate_limit_download": rate_limit_download,
+                        "rate_limit_upload": rate_limit_upload
                     }).where(
                         self.configuration.peersTable.c.id == self.id
                     )
                 )
+            self.rate_limit_download = rate_limit_download
+            self.rate_limit_upload = rate_limit_upload
+            self.configuration.getPeers()
+            self.configuration.applyTrafficLimits()
             return True, None
         except subprocess.CalledProcessError as exc:
             return False, exc.output.decode("UTF-8").strip()

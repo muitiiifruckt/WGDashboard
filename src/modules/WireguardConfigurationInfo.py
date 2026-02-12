@@ -14,6 +14,8 @@ class PeerGroupsClass(BaseModel):
     BackgroundColor: str = ''
     Icon: str = ''
     Peers: list[str] = []
+    RateLimitDownload: int = 0  # Kbit/s, 0 = no limit
+    RateLimitUpload: int = 0    # Kbit/s, 0 = no limit
 
 class WireguardConfigurationInfo(BaseModel):
     Description: str = ''

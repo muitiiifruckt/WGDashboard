@@ -45,6 +45,19 @@ const toggleTag = () => {
 			@change="group.GroupName = groupName"
 			:placeholder="GetLocale('Tag Name')"
 			class="form-control form-control-sm p-2 rounded-2 w-100">
+		<div v-if="edit" class="d-flex gap-1 mt-1 flex-wrap align-items-center">
+			<small class="text-muted">
+				<LocaleText t="Limit"></LocaleText>:
+			</small>
+			<input type="number" min="0" v-model.number="group.RateLimitDownload"
+			       :placeholder="GetLocale('Down')"
+			       class="form-control form-control-sm p-1 rounded-2" style="width: 70px">
+			<small class="text-muted">↓</small>
+			<input type="number" min="0" v-model.number="group.RateLimitUpload"
+			       :placeholder="GetLocale('Up')"
+			       class="form-control form-control-sm p-1 rounded-2" style="width: 70px">
+			<small class="text-muted">Kbit/s</small>
+		</div>
 		<button
 			v-if="edit"
 			aria-label="Delete Tag Button" @click="emits('delete')"

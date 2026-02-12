@@ -91,6 +91,8 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
             sqlalchemy.Column('keepalive', sqlalchemy.Integer),
             sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
             sqlalchemy.Column('preshared_key', sqlalchemy.String(255)),
+            sqlalchemy.Column('rate_limit_download', sqlalchemy.Integer),
+            sqlalchemy.Column('rate_limit_upload', sqlalchemy.Integer),
             extend_existing=True
         )
         self.peersRestrictedTable = sqlalchemy.Table(
@@ -115,6 +117,8 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
             sqlalchemy.Column('keepalive', sqlalchemy.Integer),
             sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
             sqlalchemy.Column('preshared_key', sqlalchemy.String(255)),
+            sqlalchemy.Column('rate_limit_download', sqlalchemy.Integer),
+            sqlalchemy.Column('rate_limit_upload', sqlalchemy.Integer),
             extend_existing=True
         )
         self.peersTransferTable = sqlalchemy.Table(
@@ -152,6 +156,8 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
             sqlalchemy.Column('keepalive', sqlalchemy.Integer),
             sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
             sqlalchemy.Column('preshared_key', sqlalchemy.String(255)),
+            sqlalchemy.Column('rate_limit_download', sqlalchemy.Integer),
+            sqlalchemy.Column('rate_limit_upload', sqlalchemy.Integer),
             extend_existing=True
         )
         self.infoTable = sqlalchemy.Table(
@@ -171,6 +177,7 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
         )
 
         self.metadata.create_all(self.engine)
+        self._WireguardConfiguration__ensureRateLimitColumns(dbName)
 
     def getPeers(self):
         self.Peers.clear()        
@@ -230,7 +237,9 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
                                         "mtu": self.DashboardConfig.GetConfig("Peers", "peer_mtu")[1],
                                         "keepalive": self.DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1],
                                         "remote_endpoint": self.DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
-                                        "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else ""
+                                        "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else "",
+                                        "rate_limit_download": None,
+                                        "rate_limit_upload": None
                                     }
                                     conn.execute(
                                         self.peersTable.insert().values(tempPeer)
@@ -280,7 +289,9 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
                         "keepalive": i['keepalive'],
                         "remote_endpoint": self.DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
                         "preshared_key": i["preshared_key"],
-                        "advanced_security": i['advanced_security']
+                        "advanced_security": i['advanced_security'],
+                        "rate_limit_download": i.get("rate_limit_download"),
+                        "rate_limit_upload": i.get("rate_limit_upload")
                     }
                     conn.execute(
                         self.peersTable.insert().values(newPeer)

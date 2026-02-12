@@ -697,15 +697,19 @@ def API_updatePeerSettings(configName):
         preshared_key = data['preshared_key']
         mtu = data['mtu']
         keepalive = data['keepalive']
+        rate_limit_download = int(data.get('rate_limit_download', 0) or 0)
+        rate_limit_upload = int(data.get('rate_limit_upload', 0) or 0)
         wireguardConfig = WireguardConfigurations[configName]
         foundPeer, peer = wireguardConfig.searchPeer(id)
         if foundPeer:
             if wireguardConfig.Protocol == 'wg':
                 status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
-                                       allowed_ip, endpoint_allowed_ip, mtu, keepalive)
+                                       allowed_ip, endpoint_allowed_ip, mtu, keepalive,
+                                       rate_limit_download=rate_limit_download, rate_limit_upload=rate_limit_upload)
             else:
                 status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
-                    allowed_ip, endpoint_allowed_ip, mtu, keepalive, "off")
+                    allowed_ip, endpoint_allowed_ip, mtu, keepalive, "off",
+                    rate_limit_download, rate_limit_upload)
             wireguardConfig.getPeers()
             DashboardWebHooks.RunWebHook('peer_updated', {
                 "configuration": wireguardConfig.Name,

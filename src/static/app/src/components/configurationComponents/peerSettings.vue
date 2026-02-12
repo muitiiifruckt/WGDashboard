@@ -198,6 +198,39 @@ export default {
 												       v-model="this.data.keepalive"
 												       id="peer_keep_alive">
 											</div>
+											<hr class="my-2">
+											<div class="text-muted small mb-1">
+												<LocaleText t="Bandwidth Limit"></LocaleText>
+												<small>(Kbit/s, 0 = no limit)</small>
+											</div>
+											<div class="row g-2">
+												<div class="col-6">
+													<label for="peer_rate_limit_download" class="form-label">
+														<small class="text-muted">
+															<i class="bi bi-arrow-down me-1"></i>
+															<LocaleText t="Download Limit"></LocaleText>
+														</small>
+													</label>
+													<input type="number" min="0" class="form-control form-control-sm rounded-3"
+													       :disabled="this.saving"
+													       v-model.number="this.data.rate_limit_download"
+													       id="peer_rate_limit_download"
+													       placeholder="0">
+												</div>
+												<div class="col-6">
+													<label for="peer_rate_limit_upload" class="form-label">
+														<small class="text-muted">
+															<i class="bi bi-arrow-up me-1"></i>
+															<LocaleText t="Upload Limit"></LocaleText>
+														</small>
+													</label>
+													<input type="number" min="0" class="form-control form-control-sm rounded-3"
+													       :disabled="this.saving"
+													       v-model.number="this.data.rate_limit_upload"
+													       id="peer_rate_limit_upload"
+													       placeholder="0">
+												</div>
+											</div>
 										</div>
 									</div>
 								</div>
